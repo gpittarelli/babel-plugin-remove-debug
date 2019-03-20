@@ -30,6 +30,7 @@ This is useful to help save on bundle size and be sure that log messages aren't 
 ## Limitations
 
 - Will only work if `debug` is imported with ES6 import syntax. `require('debug')` is not supported.
+- Doesn't do any particularly advanced flow analysis -- if you do weird things like aliasing the value you import from `debug`, the best we can do is replace the import with a dummy assignment instead of totally removing it.  (eg `import Debug from 'debug'; const x = Debug; x('hi')('yo');` will be safely neutered but won't be reduced to nothing even though it theoretically could. Notably, all the arguments in the `x('hi')('yo')` line will still be evaluated.)
 
 ## Options
 
