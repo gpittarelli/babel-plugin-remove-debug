@@ -19,7 +19,7 @@
   "author": "George Pittarelli <g@gjp.cc>",
   "license": "MIT",
   "devDependencies": {
-    "babel-core": "^7.0.0",
+    "@babel/core": "^7.0.0",
     "mocha": "6.0.2"
   }
 }
