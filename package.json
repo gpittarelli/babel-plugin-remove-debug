@@ -1,6 +1,6 @@
 {
   "name": "babel-plugin-remove-debug",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Removes usages of the npm debug module",
   "keywords": [
     "babel",
