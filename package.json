@@ -1,0 +1,25 @@
+{
+  "name": "babel-plugin-remove-debug",
+  "version": "0.0.1",
+  "description": "Removes usages of the npm debug module",
+  "keywords": [
+    "babel",
+    "plugin",
+    "remove",
+    "debug"
+  ],
+  "main": "src/index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gpittarelli/babel-plugin-remove-debug.git"
+  },
+  "scripts": {
+    "test": "mocha"
+  },
+  "author": "George Pittarelli <g@gjp.cc>",
+  "license": "MIT",
+  "devDependencies": {
+    "babel-core": "^7.0.0",
+    "mocha": "6.0.2"
+  }
+}
