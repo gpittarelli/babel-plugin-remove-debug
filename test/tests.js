@@ -23,8 +23,6 @@ function assertTransform(testName, input, expectedOutput) {
 // TODO: debug.formatters.h = v => {...}
 // TODO: debug.log = console.info.bind(console)
 // TODO: a = debug('hi'); b = a.extend('yo')
-// TODO: debug.enabled(''); debug.enable(''); debug.disable('')
-// TODO: debug('hi').enabled
 
 assertTransform(
   'should remove imports',
@@ -120,4 +118,10 @@ assertTransform(
   'noop Debug.enable usages in prescence of weird aliasing',
   `import Debug from 'debug';x=Debug;Debug=1;Debug.enable('hi');`,
   `var Debug=()=>()=>{};Debug.enable=()=>{};x=Debug;Debug=1;Debug.enable('hi');`
+);
+
+assertTransform(
+  'mock simple Debug.enabled calls with false for type safety',
+  `import Debug from 'debug';const x = Debug.enabled('hi,-*');`,
+  `const x=false;`
 );
