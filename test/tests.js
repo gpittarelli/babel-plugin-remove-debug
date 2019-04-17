@@ -49,6 +49,18 @@ assertTransform(
 );
 
 assertTransform(
+  'should remove inline usages of the debug constructor',
+  `import x from'foo';import Debug from 'debug';Debug('hi')('foo', 1, 2, 3);x();`,
+  `import x from'foo';x();`
+);
+
+assertTransform(
+  'should remove inline expression-context usages of the debug constructor',
+  `import x from'foo';import Debug from 'debug';1+Debug('hi')('foo', 1, 2, 3);x();`,
+  `import x from'foo';1+undefined;x();`
+);
+
+assertTransform(
   'should noop aliases of the debug constructor',
   `import Debug from 'debug';let y=Debug;x=y('foo');x();`,
   `var Debug=()=>()=>{};let y=Debug;x=y('foo');x();`

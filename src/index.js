@@ -73,6 +73,7 @@ module.exports = function babelRemoveDebug(babel) {
             return;
           }
 
+          // Something like Debug.someProperty
           if (usage.parentPath.isMemberExpression()) {
             const memberExpression = usage.parentPath;
             if (memberExpression.get('object').isIdentifier() && memberExpression.node.object.name === importedAs) {
@@ -110,7 +111,7 @@ module.exports = function babelRemoveDebug(babel) {
           const callExpression = usage.parentPath;
 
           if (!callExpression.isCallExpression() ||
-             callExpression.node.callee.name !== importedAs) {
+              callExpression.node.callee.name !== importedAs) {
             return;
           }
 
@@ -130,6 +131,12 @@ module.exports = function babelRemoveDebug(babel) {
             usage.parentPath.parentPath.remove();
           } else if (user.isExpressionStatement()) { // Debug('...');
             user.remove();
+          } else if (user.isCallExpression()) {
+            if (user.parentPath.isExpressionStatement()) {
+              user.parentPath.remove(); // Debug('...')('log line', 1, 2);
+            } else { // 1 + Debug('...')('log line', 1, 2);
+              user.replaceWith(t.identifier('undefined'));
+            }
           }
         });
 
