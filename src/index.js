@@ -1,4 +1,5 @@
 const seenRegExps = Object.create(null);
+
 function memoRegExp(s) {
   if (seenRegExps[s]) {
     return seenRegExps[s];
@@ -6,7 +7,7 @@ function memoRegExp(s) {
   return (seenRegExps[s] = new RegExp(s));
 }
 
-function shouldTransformImport(importName, opts) {
+function shouldTransform(importName, opts) {
   if (!opts || !opts.libraries) {
     return importName === 'debug';
   }
@@ -24,11 +25,6 @@ function shouldTransformImport(importName, opts) {
   return false;
 }
 
-function shouldTransform(path, opts) {
-  let importedLibraryName = path.node.source.value;
-  return shouldTransformImport(importedLibraryName, opts);
-}
-
 module.exports = function babelRemoveDebug(babel) {
   const t = babel.types;
   const assignment = babel.template('var IMPORT = REPLACE;');
@@ -42,35 +38,42 @@ module.exports = function babelRemoveDebug(babel) {
   knownMethods.enable = noopEnable;
   knownMethods.enabled = noopEnabled;
 
-  return {
-    visitor: {
-      ImportDeclaration(path, state) {
-        if (!shouldTransform(path, state.opts)) {
-          return;
+  const removeCall = (usage, varname) => {
+    usage.scope.crawl();
+    let binding = usage.scope.getBinding(varname);
+    if (binding) {
+      binding.referencePaths.forEach(p => {
+        let parentPath = p.parentPath;
+        if (parentPath.isCallExpression() && parentPath.node.callee.name === varname) {
+          parentPath.remove();
+        } else {
+          p.replaceWith(noopLog);
         }
+      });
+    }
+    usage.parentPath.parentPath.remove();
+  }
 
-        const defaultSpecifier = path.get('specifiers').find(specifier => {
-          return specifier.isImportDefaultSpecifier();
-        });
 
-        if (!defaultSpecifier) {
-          path.remove();
-          return;
-        }
+  const processVars = (path, importedAs, mockMethods) => {
+    let needsImportAlias = false;
 
-        const importedAs = defaultSpecifier.node.local.name;
-        path.scope.crawl();
-        const importUses = path.scope.getBinding(importedAs);
+    path.scope.crawl();
+    const importUses = path.scope.getBinding(importedAs);
 
-        const cannotRemoveUsages = importUses.constantViolations.length > 0;
-        const mockMethods = Object.create(null);
-        let needsImportAlias = false;
+    const cannotRemoveUsages = importUses.constantViolations.length > 0;
 
-        importUses.referencePaths.forEach(usage => {
+    importUses.referencePaths.forEach(usage => {
+      needsImportAlias |= processOneVar(usage, importedAs, cannotRemoveUsages, mockMethods);
+    });
+    return needsImportAlias;
+  };
+
+  const processOneVar = (usage, importedAs, cannotRemoveUsages, mockMethods) => {
+    var needsImportAlias = false;
           if (usage.parentPath.isVariableDeclarator()) {
             // alias of the Debug constructor (eg `let x = Debug;`)
-            needsImportAlias=true;
-            return;
+            return true;
           }
 
           // Something like Debug.someProperty
@@ -105,30 +108,19 @@ module.exports = function babelRemoveDebug(babel) {
               }
             }
             // Debug was used as property lookup!?
-            return;
+            return needsImportAlias;
           }
 
           const callExpression = usage.parentPath;
 
           if (!callExpression.isCallExpression() ||
-              callExpression.node.callee.name !== importedAs) {
-            return;
+            callExpression.node.callee.name !== importedAs) {
+            return needsImportAlias;
           }
 
           const user = callExpression.parentPath;
           if (user.isVariableDeclarator()) { // x = Debug('...');
-            usage.scope.crawl();
-            let binding = usage.scope.getBinding(user.node.id.name);
-            if (binding) {
-              binding.referencePaths.forEach(p => {
-                if (p.parentPath.isCallExpression()) {
-                  p.parentPath.remove();
-                } else {
-                  p.replaceWith(noopLog);
-                }
-              });
-            }
-            usage.parentPath.parentPath.remove();
+            removeCall(usage, user.node.id.name);
           } else if (user.isExpressionStatement()) { // Debug('...');
             user.remove();
           } else if (user.isCallExpression()) {
@@ -138,9 +130,66 @@ module.exports = function babelRemoveDebug(babel) {
               user.replaceWith(t.identifier('undefined'));
             }
           }
+    return needsImportAlias;
+  };
+
+  return {
+    visitor: {
+      CallExpression(path, state) {
+        let { node } = path;
+        if (!t.isIdentifier(node.callee, { name: "require" })) {
+          return;
+        };
+        if (node.arguments.length !== 1) {
+          return;
+        };
+        if (!shouldTransform(node.arguments[0].value, state.opts)) {
+          return;
+        };
+        let { parentPath } = path;
+        if (parentPath.isVariableDeclarator()) {
+          const importedAs = path.parent.id.name; // var Debug = require('debug');
+          const mockMethods = Object.create(null);
+          if (processVars(path, importedAs, mockMethods)) {
+            parentPath.parentPath.replaceWithMultiple([ //var Debug = require('debug');const Debug1=Debug;
+              assignment({
+                IMPORT: parentPath.node.id,
+                REPLACE: noopConstructor
+              })
+            ].concat(Object.keys(mockMethods).map(k =>
+              mockAssignment({
+                IMPORT: parentPath.node.id,
+                PROPERTY: k,
+                MOCK: mockMethods[k]
+              })
+            )));
+          } else {
+            parentPath.remove(); //var Debug = require('debug');const debug=Debug('tag');
+          }
+        } else if (parentPath.isCallExpression()) {
+          let varPath = parentPath.parentPath; // var debug = require('debug')('tag');
+          if (varPath.isVariableDeclarator()) {
+            removeCall(path, varPath.node.id.name);
+          }
+        }
+      },
+      ImportDeclaration(path, state) {
+        if (!shouldTransform(path.node.source.value, state.opts)) {
+          return;
+        }
+
+        const defaultSpecifier = path.get('specifiers').find(specifier => {
+          return specifier.isImportDefaultSpecifier();
         });
 
-        if (needsImportAlias) {
+        if (!defaultSpecifier) {
+          path.remove();
+          return;
+        }
+
+        const importedAs = defaultSpecifier.node.local.name;
+        const mockMethods = Object.create(null);
+        if (processVars(path, importedAs, mockMethods)) {
           path.replaceWithMultiple([
             assignment({
               IMPORT: defaultSpecifier.node.local,
@@ -154,7 +203,7 @@ module.exports = function babelRemoveDebug(babel) {
             })
           )));
         } else {
-          path.remove();
+          path.remove(); //import Debug from 'debug'
         }
       }
     }
